@@ -261,6 +261,7 @@ void tuh_midi_umount_cb(uint8_t dev_addr, uint8_t instance)
 
 void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
 {
+    printf("Midi Callback\r\n");
   if (midi_dev_addr == dev_addr) {
     if (num_packets != 0) {
       uint8_t cable_num;
