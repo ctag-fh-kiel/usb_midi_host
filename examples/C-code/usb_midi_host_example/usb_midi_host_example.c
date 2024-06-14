@@ -106,6 +106,8 @@ static void send_next_note(bool connected)
     tuh_midi_stream_flush(midi_dev_addr);
 }
 
+#define MCU_GPIO_SEL 1
+
 int main() {
 
     bi_decl(bi_program_description("A USB MIDI host example."));
@@ -113,11 +115,17 @@ int main() {
 
     board_init();
     printf("Pico MIDI Host Example\r\n");
+
+    // Enable USB-A
+    gpio_init(MCU_GPIO_SEL);
+    gpio_set_dir(MCU_GPIO_SEL, GPIO_OUT);
+    gpio_put(MCU_GPIO_SEL, 1);
     tusb_init();
 
     // Map the pins to functions
     gpio_init(LED_GPIO);
     gpio_set_dir(LED_GPIO, GPIO_OUT);
+
     while (1) {
         tuh_task();
 
