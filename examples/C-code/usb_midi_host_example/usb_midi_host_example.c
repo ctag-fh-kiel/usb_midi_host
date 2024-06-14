@@ -46,6 +46,7 @@
 const uint NO_LED_GPIO = 255;
 const uint LED_GPIO = 25;
 #define MCU_GPIO_SEL 1
+#define WS_PIN 5
 
 static uint8_t midi_dev_addr = 0;
 
@@ -110,7 +111,9 @@ static void send_next_note(bool connected)
     tuh_midi_stream_flush(midi_dev_addr);
 }
 
-
+void gpio_callback(uint gpio, uint32_t events) {
+    printf("GPIO %d %d\n", gpio, events);
+}
 
 void core1_entry() {
 
@@ -122,6 +125,9 @@ void core1_entry() {
         printf("Hmm, that's not right on core 1!\n");
     else
         printf("Its all gone well on core 1!");
+
+    // enable GPIO interrupts
+    gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
     printf("Starting core1 event loop\n");
     while (1)
@@ -150,7 +156,6 @@ int main() {
     multicore_launch_core1(core1_entry);
 
     // Wait for it to start up
-
     uint32_t g = multicore_fifo_pop_blocking();
 
     if (g != 42)
