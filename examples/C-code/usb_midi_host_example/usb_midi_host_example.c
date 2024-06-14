@@ -37,11 +37,15 @@
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
 #include "bsp/board_api.h"
+#include "pico/multicore.h"
 #include "tusb.h"
 #include "usb_midi_host.h"
+
+
 // On-board LED mapping. If no LED, set to NO_LED_GPIO
 const uint NO_LED_GPIO = 255;
 const uint LED_GPIO = 25;
+#define MCU_GPIO_SEL 1
 
 static uint8_t midi_dev_addr = 0;
 
@@ -106,7 +110,23 @@ static void send_next_note(bool connected)
     tuh_midi_stream_flush(midi_dev_addr);
 }
 
-#define MCU_GPIO_SEL 1
+
+
+void core1_entry() {
+
+    multicore_fifo_push_blocking(42);
+
+    uint32_t g = multicore_fifo_pop_blocking();
+
+    if (g != 43)
+        printf("Hmm, that's not right on core 1!\n");
+    else
+        printf("Its all gone well on core 1!");
+
+    printf("Starting core1 event loop\n");
+    while (1)
+        tight_loop_contents();
+}
 
 int main() {
 
@@ -126,6 +146,21 @@ int main() {
     gpio_init(LED_GPIO);
     gpio_set_dir(LED_GPIO, GPIO_OUT);
 
+    // start multicore
+    multicore_launch_core1(core1_entry);
+
+    // Wait for it to start up
+
+    uint32_t g = multicore_fifo_pop_blocking();
+
+    if (g != 42)
+        printf("Hmm, that's not right on core 0!\n");
+    else {
+        multicore_fifo_push_blocking(43);
+        printf("It's all gone well on core 0!");
+    }
+
+    printf("Starting core0 event loop\n");
     while (1) {
         tuh_task();
 
