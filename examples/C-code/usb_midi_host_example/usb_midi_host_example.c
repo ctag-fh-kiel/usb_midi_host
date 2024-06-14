@@ -38,6 +38,7 @@
 #include "pico/binary_info.h"
 #include "bsp/board_api.h"
 #include "pico/multicore.h"
+#include "hardware/spi.h"
 #include "tusb.h"
 #include "usb_midi_host.h"
 
@@ -47,10 +48,19 @@ const uint NO_LED_GPIO = 255;
 const uint LED_GPIO = 25;
 #define MCU_GPIO_SEL 1
 #define WS_PIN 5
+#define SPI_PORT spi1
+#define SPI_SPEED 10000000
+#define SPI_SCLK 26
+#define SPI_MOSI 27
+#define SPI_MISO 28
+#define SPI_CS 29
+#define SPI_BUFFER_LEN 64
 
 static uint8_t midi_dev_addr = 0;
 
 semaphore_t ws_semaphore;
+
+uint8_t out_buf[SPI_BUFFER_LEN], in_buf[SPI_BUFFER_LEN];
 
 static void blink_led(void)
 {
@@ -113,8 +123,13 @@ static void send_next_note(bool connected)
     tuh_midi_stream_flush(midi_dev_addr);
 }
 
-void gpio_callback(uint gpio, uint32_t events) {
-    sem_release(&ws_semaphore);
+static void ws_callback(uint gpio, uint32_t events) {
+    static int div = 32;
+    div--;
+    if(div <= 0){
+        div = 32;
+        sem_release(&ws_semaphore);//printf("ws_callback\n"
+    }
 }
 
 void core1_entry() {
@@ -128,16 +143,28 @@ void core1_entry() {
     else
         printf("Its all gone well on core 1!");
 
+    printf("SPI setup\n");
+
+    // Enable SPI 0 at 1 MHz and connect to GPIOs
+    spi_init(SPI_PORT, SPI_SPEED);
+    gpio_set_function(SPI_MISO, GPIO_FUNC_SPI);
+    gpio_set_function(SPI_SCLK, GPIO_FUNC_SPI);
+    gpio_set_function(SPI_MOSI, GPIO_FUNC_SPI);
+    gpio_set_function(SPI_CS, GPIO_FUNC_SPI);
+    // Make the SPI pins available to picotool
+    bi_decl(bi_4pins_with_func(PICO_DEFAULT_SPI_RX_PIN, PICO_DEFAULT_SPI_TX_PIN, PICO_DEFAULT_SPI_SCK_PIN, PICO_DEFAULT_SPI_CSN_PIN, GPIO_FUNC_SPI));
+
     // initialize semaphore
     sem_init(&ws_semaphore, 0, 1);
 
     // enable GPIO interrupts
-    gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &ws_callback);
 
     printf("Starting core1 event loop\n");
     while (1){
         sem_acquire_blocking(&ws_semaphore);
-        printf("GPIO Semaphore released\n");
+        //printf("SPI read\n");
+        spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
     }
         //tight_loop_contents();
 }
