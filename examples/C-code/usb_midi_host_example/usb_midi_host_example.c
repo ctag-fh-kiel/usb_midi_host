@@ -50,6 +50,8 @@ const uint LED_GPIO = 25;
 
 static uint8_t midi_dev_addr = 0;
 
+semaphore_t ws_semaphore;
+
 static void blink_led(void)
 {
     static absolute_time_t previous_timestamp = {0};
@@ -112,7 +114,7 @@ static void send_next_note(bool connected)
 }
 
 void gpio_callback(uint gpio, uint32_t events) {
-    printf("GPIO %d %d\n", gpio, events);
+    sem_release(&ws_semaphore);
 }
 
 void core1_entry() {
@@ -126,12 +128,18 @@ void core1_entry() {
     else
         printf("Its all gone well on core 1!");
 
+    // initialize semaphore
+    sem_init(&ws_semaphore, 0, 1);
+
     // enable GPIO interrupts
     gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
     printf("Starting core1 event loop\n");
-    while (1)
-        tight_loop_contents();
+    while (1){
+        sem_acquire_blocking(&ws_semaphore);
+        printf("GPIO Semaphore released\n");
+    }
+        //tight_loop_contents();
 }
 
 int main() {
