@@ -39,6 +39,7 @@
 #include "bsp/board_api.h"
 #include "pico/multicore.h"
 #include "hardware/spi.h"
+#include "hardware/sync.h"
 #include "tusb.h"
 #include "usb_midi_host.h"
 
@@ -59,6 +60,7 @@ const uint LED_GPIO = 25;
 static uint8_t midi_dev_addr = 0;
 
 semaphore_t ws_semaphore;
+mutex_t data_mutex;
 
 uint8_t out_buf[SPI_BUFFER_LEN], in_buf[SPI_BUFFER_LEN];
 
@@ -124,11 +126,13 @@ static void send_next_note(bool connected)
 }
 
 static void ws_callback(uint gpio, uint32_t events) {
+    // sync to word clock of codec i2s
+    // divider 32 is block size of TBD
     static int div = 32;
     div--;
     if(div <= 0){
         div = 32;
-        sem_release(&ws_semaphore);//printf("ws_callback\n"
+        sem_release(&ws_semaphore);
     }
 }
 
@@ -163,8 +167,12 @@ void core1_entry() {
     printf("Starting core1 event loop\n");
     while (1){
         sem_acquire_blocking(&ws_semaphore);
-        //printf("SPI read\n");
+        // Lock the mutex
+        mutex_enter_blocking(&data_mutex);
+        // transfer data
         spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
+        // Unlock the mutex
+        mutex_exit(&data_mutex);
     }
         //tight_loop_contents();
 }
@@ -176,6 +184,11 @@ int main() {
 
     board_init();
     printf("Pico MIDI Host Example\r\n");
+
+    // initialize data mutex
+    printf("Initializing data mutex\n");
+    mutex_init(&data_mutex);
+
 
     // Enable USB-A
     gpio_init(MCU_GPIO_SEL);
@@ -254,8 +267,27 @@ void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
       uint8_t buffer[48];
       while (1) {
         uint32_t bytes_read = tuh_midi_stream_read(dev_addr, &cable_num, buffer, sizeof(buffer));
-        if (bytes_read == 0)
-          return;
+        if (bytes_read == 0){
+            mutex_enter_blocking(&data_mutex);
+            // nothing read
+            *out_buf = 0;
+            mutex_exit(&data_mutex);
+            return;
+        }
+
+        // put data into buffer for SPI transfer
+        // TODO split messages if bytes_read > SPI_BUFFER_LEN - 1
+        if(bytes_read > SPI_BUFFER_LEN - 1){
+          printf("MIDI RX Cable #%u: Message too long\r\n", cable_num);
+        }else{
+            // Lock the mutex
+            mutex_enter_blocking(&data_mutex);
+            // transfer data
+            *out_buf = bytes_read;
+            memcpy(out_buf + 1, buffer, bytes_read);
+            // Unlock the mutex
+            mutex_exit(&data_mutex);
+        }
         printf("MIDI RX Cable #%u:", cable_num);
         for (uint32_t idx = 0; idx < bytes_read; idx++) {
           printf("%02x ", buffer[idx]);
