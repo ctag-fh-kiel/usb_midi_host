@@ -62,6 +62,9 @@ static uint8_t midi_dev_addr = 0;
 semaphore_t ws_semaphore;
 mutex_t data_mutex;
 
+// transfer structure is
+// byte 0, 1 -> 0xCA 0xFE (fingerprint)
+// byte 2 -> amount of data bytes (max. 64 - 3)
 uint8_t out_buf[SPI_BUFFER_LEN], in_buf[SPI_BUFFER_LEN];
 
 static void blink_led(void)
@@ -271,25 +274,29 @@ void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
         if (bytes_read == 0){
             mutex_enter_blocking(&data_mutex);
             // nothing read
-            *out_buf = 0;
+            out_buf[0] = 0xCA;
+            out_buf[1] = 0xFE;
+            out_buf[2] = 0;
             mutex_exit(&data_mutex);
             return;
         }
 
         // put data into buffer for SPI transfer
-        // TODO split messages if bytes_read > SPI_BUFFER_LEN - 1
-        if(bytes_read > SPI_BUFFER_LEN - 1){
+        // TODO split messages if bytes_read > SPI_BUFFER_LEN - 3
+        if(bytes_read > SPI_BUFFER_LEN - 3){
           printf("MIDI RX Cable #%u: Message too long\r\n", cable_num);
         }else{
             // Lock the mutex
             mutex_enter_blocking(&data_mutex);
             // transfer data
-            *out_buf = bytes_read;
-            memcpy(out_buf + 1, buffer, bytes_read);
+            out_buf[0] = 0xCA;
+            out_buf[1] = 0xFE;
+            out_buf[2] = (uint8_t) bytes_read;
+            memcpy(out_buf + 3, buffer, bytes_read);
             // Unlock the mutex
             mutex_exit(&data_mutex);
         }
-        printf("MIDI RX Cable #%u:", cable_num);
+        printf("MIDI RX Cable #%u, bytes read %d, values:", cable_num, bytes_read);
         for (uint32_t idx = 0; idx < bytes_read; idx++) {
           printf("%02x ", buffer[idx]);
         }
