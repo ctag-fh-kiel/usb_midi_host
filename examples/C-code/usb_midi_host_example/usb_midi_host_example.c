@@ -129,7 +129,7 @@ static void send_next_note(bool connected)
 }
 
 static void ws_callback(uint gpio, uint32_t events) {
-    // sync to word clock of codec i2s
+    // sync to word clock of codec i2s @ 44100Hz
     // divider 32 is block size of TBD
     static int div = 32;
     div--;
@@ -165,10 +165,12 @@ void core1_entry() {
     sem_init(&ws_semaphore, 0, 1);
 
     // enable GPIO interrupts
+    // set IRQ for WS pin
     gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &ws_callback);
 
     printf("Starting core1 event loop\n");
     while (1){
+        // TODO do this with DMA
         sem_acquire_blocking(&ws_semaphore);
         // Lock the mutex
         mutex_enter_blocking(&data_mutex);
