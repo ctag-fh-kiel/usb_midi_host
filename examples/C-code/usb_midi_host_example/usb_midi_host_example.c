@@ -179,6 +179,8 @@ void core1_entry() {
     gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &ws_callback);
 
     printf("Starting core1 event loop\n");
+    // protocol is magic number 0xCAFE, 1 byte for length of message
+    // max message length is 64 - 3 bytes
     out_buf[0] = 0xCA;
     out_buf[1] = 0xFE;
     while (1){
@@ -191,6 +193,7 @@ void core1_entry() {
         gpio_put(SPI_CS, 0);
         spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
         gpio_put(SPI_CS, 1);
+        // data is sent so set length in protocol to 0
         out_buf[2] = 0x00;
         // Unlock the mutex
         mutex_exit(&data_mutex);
