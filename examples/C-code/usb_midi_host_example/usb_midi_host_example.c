@@ -50,7 +50,7 @@ const uint LED_GPIO = 25;
 #define MCU_GPIO_SEL 1
 #define WS_PIN 5
 #define SPI_PORT spi1
-#define SPI_SPEED 10000000
+#define SPI_SPEED 8000000
 #define SPI_SCLK 26
 #define SPI_MOSI 27
 #define SPI_MISO 28
@@ -157,9 +157,19 @@ void core1_entry() {
     gpio_set_function(SPI_MISO, GPIO_FUNC_SPI);
     gpio_set_function(SPI_SCLK, GPIO_FUNC_SPI);
     gpio_set_function(SPI_MOSI, GPIO_FUNC_SPI);
-    gpio_set_function(SPI_CS, GPIO_FUNC_SPI);
+    //gpio_set_function(SPI_CS, GPIO_FUNC_SPI);
+    spi_set_format(SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+
+    // Configure CS pin
+    gpio_init(SPI_CS);
+    gpio_set_dir(SPI_CS, GPIO_OUT);
+    gpio_put(SPI_CS, 1); // Deassert CS initially
+
+
     // Make the SPI pins available to picotool
-    bi_decl(bi_4pins_with_func(PICO_DEFAULT_SPI_RX_PIN, PICO_DEFAULT_SPI_TX_PIN, PICO_DEFAULT_SPI_SCK_PIN, PICO_DEFAULT_SPI_CSN_PIN, GPIO_FUNC_SPI));
+    //bi_decl(bi_4pins_with_func(PICO_DEFAULT_SPI_RX_PIN, PICO_DEFAULT_SPI_TX_PIN, PICO_DEFAULT_SPI_SCK_PIN, PICO_DEFAULT_SPI_CSN_PIN, GPIO_FUNC_SPI));
+    bi_decl(bi_3pins_with_func(PICO_DEFAULT_SPI_RX_PIN, PICO_DEFAULT_SPI_TX_PIN, PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI));
+
 
     // initialize semaphore
     sem_init(&ws_semaphore, 0, 1);
@@ -169,13 +179,19 @@ void core1_entry() {
     gpio_set_irq_enabled_with_callback(WS_PIN, GPIO_IRQ_EDGE_FALL, true, &ws_callback);
 
     printf("Starting core1 event loop\n");
+    out_buf[0] = 0xCA;
+    out_buf[1] = 0xFE;
     while (1){
+        uint8_t len;
         // TODO do this with DMA
         sem_acquire_blocking(&ws_semaphore);
         // Lock the mutex
         mutex_enter_blocking(&data_mutex);
         // transfer data
-        spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
+        gpio_put(SPI_CS, 0);
+        len = spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
+        gpio_put(SPI_CS, 1);
+        out_buf[2] = 0x00;
         // Unlock the mutex
         mutex_exit(&data_mutex);
     }
@@ -273,15 +289,7 @@ void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
       uint8_t buffer[48];
       while (1) {
         uint32_t bytes_read = tuh_midi_stream_read(dev_addr, &cable_num, buffer, sizeof(buffer));
-        if (bytes_read == 0){
-            mutex_enter_blocking(&data_mutex);
-            // nothing read
-            out_buf[0] = 0xCA;
-            out_buf[1] = 0xFE;
-            out_buf[2] = 0;
-            mutex_exit(&data_mutex);
-            return;
-        }
+        if (bytes_read == 0) return;
 
         // put data into buffer for SPI transfer
         // TODO split messages if bytes_read > SPI_BUFFER_LEN - 3
@@ -290,9 +298,7 @@ void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
         }else{
             // Lock the mutex
             mutex_enter_blocking(&data_mutex);
-            // transfer data
-            out_buf[0] = 0xCA;
-            out_buf[1] = 0xFE;
+            // copy data to be transferred
             out_buf[2] = (uint8_t) bytes_read;
             memcpy(out_buf + 3, buffer, bytes_read);
             // Unlock the mutex
