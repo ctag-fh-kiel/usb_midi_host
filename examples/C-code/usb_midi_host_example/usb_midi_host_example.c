@@ -189,7 +189,7 @@ void core1_entry() {
         mutex_enter_blocking(&data_mutex);
         // transfer data
         gpio_put(SPI_CS, 0);
-        len = spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
+        spi_write_read_blocking(SPI_PORT, out_buf, in_buf, SPI_BUFFER_LEN);
         gpio_put(SPI_CS, 1);
         out_buf[2] = 0x00;
         // Unlock the mutex
