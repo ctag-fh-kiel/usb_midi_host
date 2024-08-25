@@ -32,6 +32,9 @@
 
 #include "usb_midi_host.h"
 #include <stdlib.h>
+#if defined(RP2040_USB_HOST_MODE)
+#include "portable/raspberrypi/rp2040/rp2040_usb.h"
+#endif
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
 //--------------------------------------------------------------------+
@@ -134,6 +137,13 @@ typedef struct
   uint8_t ep_in_associated_jacks[MAX_OUT_JACKS/2];
   uint8_t ep_out_associated_jacks[MAX_IN_JACKS/2];
 #endif
+#if defined(RP2040_USB_HOST_MODE)
+  // set to true before the first Bulk IN xfer for
+  // devices known to have a wrong intial Bulk IN
+  // data sequence error.
+  // see https://github.com/raspberrypi/pico-feedback/issues/394
+  bool discard_in_xfer;
+#endif
 }midih_interface_t;
 
 static midih_interface_t _midi_host[CFG_TUH_DEVICE_MAX];
@@ -220,7 +230,11 @@ bool midih_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
   {
     // receive new data if available
     uint32_t packets_queued = 0;
+#if defined(RP2040_USB_HOST_MODE)
+    if (xferred_bytes && !p_midi_host->discard_in_xfer)
+#else
     if (xferred_bytes)
+#endif
     {
       // put in the RX FIFO only non-zero MIDI IN 4-byte packets
       uint8_t* buf = p_midi_host->epin_buf;
@@ -244,7 +258,9 @@ bool midih_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
         tuh_midi_rx_cb(dev_addr, packets_queued);
       }
     }
-
+#if defined(RP2040_USB_HOST_MODE)
+    p_midi_host->discard_in_xfer = false;
+#endif
     TU_LOG2("Requesting poll IN endpoint %d\r\n", p_midi_host->ep_in);
     TU_ASSERT(usbh_edpt_xfer(p_midi_host->dev_addr, p_midi_host->ep_in, p_midi_host->epin_buf, p_midi_host->ep_in_max), 0);
   }
@@ -539,7 +555,7 @@ bool midih_open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const *d
     TU_ASSERT(tuh_edpt_open(dev_addr, out_desc));
   }
   p_midi_host->dev_addr = dev_addr;
-
+  p_midi_host->discard_in_xfer = hw_should_discard_first_in_xfer(dev_addr, p_midi_host->ep_in);
   return true;
 }
 
@@ -559,6 +575,7 @@ bool midih_set_config(uint8_t dev_addr, uint8_t itf_num)
   p_midi_host->configured = true;
 
   TU_LOG2("Requesting poll IN endpoint %d\r\n", p_midi_host->ep_in);
+
   TU_ASSERT(usbh_edpt_xfer(p_midi_host->dev_addr, p_midi_host->ep_in, p_midi_host->epin_buf, p_midi_host->ep_in_max), 0);
   if (tuh_midi_mount_cb)
   {

@@ -39,11 +39,36 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 #include "usb_midi_host.h"
+#if defined(RP2040_USB_HOST_MODE)
+#include "portable/raspberrypi/rp2040/rp2040_usb.h"
+#endif
 // On-board LED mapping. If no LED, set to NO_LED_GPIO
 const uint NO_LED_GPIO = 255;
 const uint LED_GPIO = 25;
 
 static uint8_t midi_dev_addr = 0;
+
+#if defined(RP2040_USB_HOST_MODE)
+static hw_data_seq_workaround_t data_seq_workaround_list[] =
+{
+    // Arturia Beatstep Pro
+    {
+        0x1c75,
+        0x0287,
+        {0x81,0,0,0}
+    },
+#if 0
+    // This is for my test board
+    {
+        0xcafe,
+        0x4008,
+        {0x81, 0, 0, 0}
+    }
+#endif
+};
+#endif
+
+static const size_t data_seq_workaround_list_len = sizeof(data_seq_workaround_list)/sizeof(data_seq_workaround_list[0]);
 
 static void blink_led(void)
 {
@@ -110,7 +135,9 @@ int main() {
 
     bi_decl(bi_program_description("A USB MIDI host example."));
     bi_decl(bi_1pin_with_name(LED_GPIO, "On-board LED"));
-
+#if defined(RP2040_USB_HOST_MODE)
+    hw_set_data_seq_workaround_list(data_seq_workaround_list, data_seq_workaround_list_len);
+#endif
     board_init();
     printf("Pico MIDI Host Example\r\n");
     tusb_init();
