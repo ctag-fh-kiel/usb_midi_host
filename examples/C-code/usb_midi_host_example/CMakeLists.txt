@@ -23,7 +23,7 @@ target_include_directories(${target_proj} PRIVATE
 
 target_link_options(${target_proj} PRIVATE -Xlinker --print-memory-usage)
 target_compile_options(${target_proj} PRIVATE -Wall -Wextra)
-target_link_libraries(${target_proj} tinyusb_host tinyusb_board usb_midi_host_app_driver pico_stdlib)
+target_link_libraries(${target_proj} tinyusb_host tinyusb_board usb_midi_host_app_driver pico_stdlib pico_multicore hardware_spi)
 if(DEFINED PICO_BOARD)
 if(${PICO_BOARD} MATCHES "pico_w")
 message("board is pico_w")
